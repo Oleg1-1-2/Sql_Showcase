@@ -1,0 +1,115 @@
+ALTER SESSION SET nls_date_language = 'AMERICAN';
+
+		SELECT DISTINCT
+			dim_c.client_id,
+			/*
+			дата рождени¤
+			*/
+			TO_DATE(SUBSTR(dim_c.birth_dt, 1, 9)) AS birth_dt,
+			/* 
+			возраст (целое число лет)
+			*/
+			COALESCE(FLOOR(MONTHS_BETWEEN(CAST('01.DEC.2021' AS DATE), TO_DATE(SUBSTR(dim_c.birth_dt, 1, 9))) / 12), 0) AS age,
+			/* 
+			 код региона
+			*/
+			COALESCE(dim_c.region_code, 0) AS region_code,
+			/*
+			адрес регистрации
+			*/
+			COALESCE(addr.reg_addr, 'нет данных') AS reg_addr,    
+			/* 
+			адрес проживани¤
+			*/
+			addr.fact_addr AS fact_addr,
+			/*
+			пол (наименование)
+			*/
+			COALESCE(dict_gen.gender_nm, 'нет данных') AS gender_nm,
+			/* 
+			уровень образования (наименование)
+			*/
+			COALESCE(dict_edu.level_nm, 'нет данных') AS education_level_nm,
+			/* 
+			семейное положение (наименование) 
+			*/
+			COALESCE(dict_fs.status_nm, 'нет данных') AS family_status_nm,
+			/*
+			рабочий стаж (целое кол-во лет)
+			*/
+
+			dim_c.fullseniority_year_cnt AS fullseniority_year_cnt,
+			/* 
+			доля жизни клиента, которую он работал
+			*/
+			ROUND((dim_c.fullseniority_year_cnt / 
+				FLOOR(MONTHS_BETWEEN(CAST('01.DEC.2021' AS DATE),
+				TO_DATE(SUBSTR(dim_c.birth_dt, 1, 9))) / 12)), 2) AS work_part_of_life_pct,
+			/*
+			является ли сотрудником банка
+			*/
+			CASE
+				WHEN dim_c.staff_flg = 1 THEN 'Да'
+				ELSE 'Нет'
+			END AS stuff_flg,
+			/* 
+			 кол-во лет с последнего изменения имени (если не заполнено, то оставить NULL)
+			*/    
+			2021 - dim_c.name_change_year AS last_nm_change_year_cnt
+		FROM
+			de_common.group_dim_client dim_c
+		LEFT JOIN
+			DE_COMMON.group_dim_client_address dim_a
+			ON
+			dim_c.client_id = dim_a.client_id
+		LEFT JOIN
+			DE_COMMON.group_dict_address_type dict_add
+			ON
+			dim_a.addr_type = dict_add.address_code
+		LEFT JOIN
+			DE_COMMON.group_dict_gender dict_gen
+			ON
+			dim_c.gender_code = dict_gen.gender_code
+		LEFT JOIN
+			DE_COMMON.group_dict_education_level dict_edu
+			ON
+			dim_c.education_level_code = dict_edu.level_code
+		LEFT JOIN
+			DE_COMMON.group_dict_family_status dict_fs
+			ON
+			dim_c.family_status_code = dict_fs.status_code
+		LEFT JOIN
+			(
+				SELECT 
+					a.client_id,
+					a.region||
+						NVL2(a.region_type, ' '||LOWER(a.region_type), '')|| 
+						NVL2(a.district, ', '||a.district, '')||
+						NVL2(a.district_type, ' '||LOWER(a.district_type), '')||
+						NVL2(a.city_type, ', '||LOWER(a.city_type), '')||
+						NVL2(a.city, ' '||a.city, '')||
+						NVL2(a.town_type, ', '||LOWER(a.town_type), '')||
+						NVL2(a.town, ' '||a.town, '') AS reg_addr,
+					b.region||
+						NVL2(b.region_type, ' '||LOWER(b.region_type), '')|| 
+						NVL2(b.district, ', '||b.district, '')||
+						NVL2(b.district_type, ' '||LOWER(b.district_type), '')||
+						NVL2(b.city_type, ', '||LOWER(b.city_type), '')||
+						NVL2(b.city, ' '||b.city, '')||
+						NVL2(b.town_type, ', '||LOWER(b.town_type), '')||
+						NVL2(b.town, ' '||b.town, '') AS fact_addr
+				FROM
+					(
+						SELECT * FROM de_common.group_dim_client_address
+						WHERE addr_type = 1
+					) a
+						INNER JOIN
+					(
+						SELECT * FROM de_common.group_dim_client_address
+						WHERE addr_type = 2
+					) b
+						ON
+						a.client_id = b.client_id
+			) addr
+			ON
+			dim_c.client_id = addr.client_id
